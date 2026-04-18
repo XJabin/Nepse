@@ -1,0 +1,7 @@
+streamlit
+pandas
+numpy
+scikit-learn
+tensorflow-cpu
+huggingface_hub
+plotly
