@@ -2,7 +2,6 @@ import sqlite3
 import os
 
 def initialize_database():
-    # अब 'data' फोल्डर चेक गरिरहनु पर्दैन, सिधै बाहिर बनाउने
     conn = sqlite3.connect('nepse_data.db') 
     cursor = conn.cursor()
     

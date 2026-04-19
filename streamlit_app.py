@@ -3,125 +3,123 @@ import sqlite3
 import pandas as pd
 import numpy as np
 import os
+import requests
 import plotly.graph_objects as go
 from tensorflow.keras.models import load_model
 from sklearn.preprocessing import MinMaxScaler
 from huggingface_hub import hf_hub_download
-from streamlit.runtime.scriptrunner import get_script_run_ctx
 
-st.set_page_config(page_title="NEPSE Intelligence Platform", layout="wide", page_icon="📈")
+st.set_page_config(page_title="NEPSE Intelligence PRO", layout="wide")
 
-DB_PATH = "nepse_data.db"  
-REPO_ID = "XJabin/nepse-lstm-model" 
-MODEL_FILE = "nepse_lstm_model.h5"
+DB_PATH = "nepse_data.db"
+GITHUB_URL = "https://raw.githubusercontent.com/XJabin/Nepse/main/nepse_data.db"
+
+def sync_db():
+    try:
+        r = requests.get(GITHUB_URL, timeout=15)
+        if r.status_code == 200:
+            with open(DB_PATH, "wb") as f: f.write(r.content)
+            return True
+    except: return False
+    return False
+
+if not os.path.exists(DB_PATH): sync_db()
 
 @st.cache_resource
-def load_hf_model():
+def load_ai_model():
     try:
-        model_path = hf_hub_download(repo_id=REPO_ID, filename=MODEL_FILE)
-        model = load_model(model_path, compile=False)
-        model.compile(optimizer='adam', loss='mse')
-        return model
-    except:
-        return None
+        path = hf_hub_download(repo_id="XJabin/nepse-lstm-model", filename="nepse_lstm_model.h5")
+        return load_model(path, compile=False)
+    except: return None
 
-def get_symbols():
-    symbols = []
-    if not os.path.exists(DB_PATH):
-        return symbols
+def get_clean_data(symbol_name):
+    if not os.path.exists(DB_PATH): return pd.DataFrame()
     conn = sqlite3.connect(DB_PATH)
     try:
-        query = "SELECT DISTINCT symbol FROM daily_stock WHERE symbol IS NOT NULL AND symbol != '' AND symbol != 'NEPSE Index' ORDER BY symbol ASC"
-        symbols = pd.read_sql_query(query, conn)['symbol'].tolist()
+        query = f"SELECT * FROM daily_stock WHERE symbol = '{symbol_name}' ORDER BY id ASC"
+        df = pd.read_sql(query, conn)
+        conn.close()
+        if not df.empty:
+            df.columns = [c.lower() for c in df.columns]
+            for col in ['open', 'high', 'low', 'close', 'vol']:
+                if col not in df.columns: df[col] = 0.0
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+            if 'date' in df.columns:
+                df['date_display'] = pd.to_datetime(df['date'], errors='coerce')
+            return df
     except:
-        pass
-    conn.close()
-    return symbols
+        if 'conn' in locals(): conn.close()
+    return pd.DataFrame()
 
-def get_data(symbol=None):
-    if not os.path.exists(DB_PATH):
-        return pd.DataFrame()
+st.sidebar.title("NEPSE Control")
+if st.sidebar.button("🔄 Sync Database"):
+    if sync_db(): st.rerun()
+
+# ग्राफ छान्ने अप्सन
+chart_mode = st.sidebar.radio("View Mode:", ["Line Chart", "Candlestick"])
+
+if os.path.exists(DB_PATH):
     conn = sqlite3.connect(DB_PATH)
-    try:
-        if symbol is None or symbol == "NEPSE Index":
-            # मार्चदेखिको सबै डाटा तान्नको लागि फिल्टर खुकुलो बनाइएको
-            query = "SELECT * FROM daily_stock WHERE symbol IS NULL OR symbol = '' OR symbol = 'NEPSE Index' ORDER BY date ASC"
-            df = pd.read_sql_query(query, conn)
-            if df.empty:
-                df = pd.read_sql_query("SELECT * FROM daily_stock ORDER BY date ASC", conn)
-        else:
-            query = f"SELECT * FROM daily_stock WHERE symbol = '{symbol}' ORDER BY date ASC"
-            df = pd.read_sql_query(query, conn)
-    except:
-        df = pd.DataFrame()
+    all_syms = pd.read_sql("SELECT DISTINCT symbol FROM daily_stock WHERE symbol != ''", conn)['symbol'].tolist()
     conn.close()
     
-    if not df.empty:
-        df['date'] = pd.to_datetime(df['date'], errors='coerce')
-        df = df.dropna(subset=['date']).drop_duplicates(subset=['date'], keep='first')
-        for col in ['open', 'high', 'low', 'close', 'vol']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-    return df
+    if "SCRAPED_DATA" in all_syms:
+        all_syms.remove("SCRAPED_DATA")
+        all_syms = ["SCRAPED_DATA"] + all_syms
+    
+    selected = st.sidebar.selectbox("Select Asset", all_syms, index=0)
+else:
+    st.stop()
 
-st.title("📈 NEPSE Intelligence Platform")
-
-st.sidebar.title("Market Control")
-all_symbols = get_symbols()
-selection = st.sidebar.selectbox("Select Market/Company:", ["NEPSE Index"] + all_symbols)
-chart_type = st.sidebar.radio("Chart Style:", ["Line Chart", "Candlestick"])
-
-df = get_data(None if selection == "NEPSE Index" else selection)
+st.title(f"📈 {selected} Intelligence Platform")
+df = get_clean_data(selected)
 
 if not df.empty:
-    last_price = df['close'].iloc[-1]
-    change = last_price - df['close'].iloc[-2] if len(df) > 1 else 0.0
+    last = df.iloc[-1]
+    prev = df['close'].iloc[-2] if len(df) > 1 else last['close']
+    diff = last['close'] - prev
     
-    m1, m2, m3 = st.columns(3)
-    m1.metric(selection, f"Rs. {last_price:.2f}", f"{change:.2f}")
-    m2.metric("Data Points", len(df))
-    m3.metric("Last Update", df['date'].iloc[-1].strftime('%Y-%m-%d'))
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Current Value", f"{last['close']:.2f}", f"{diff:.2f}")
+    m2.metric("Open", f"{last['open']:.2f}")
+    m3.metric("High", f"{last['high']:.2f}")
+    m4.metric("Low", f"{last['low']:.2f}")
+    
+    # मिति देखाउने लजिक
+    last_date = last['date_display'].strftime('%Y-%m-%d') if 'date_display' in df.columns and not pd.isnull(last['date_display']) else "N/A"
+    m5.metric("Last Updated", last_date)
 
-    col1, col2 = st.columns([2, 1])
+    st.divider()
 
-    with col1:
-        st.subheader(f"{selection} {chart_type}")
+    c_left, c_right = st.columns([2, 1])
+    
+    with c_left:
         fig = go.Figure()
-        
-        if chart_type == "Candlestick" and all(k in df.columns for k in ['open', 'high', 'low', 'close']):
-            fig.add_trace(go.Candlestick(x=df['date'], open=df['open'], high=df['high'], low=df['low'], close=df['close'], name='Market Data'))
+        # Candlestick र Line Chart दुवैमा 'Index' प्रयोग गरिएको छ ताकि ग्राफ नबिग्रियोस्
+        if chart_mode == "Candlestick" and last['open'] > 0:
+            fig.add_trace(go.Candlestick(x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'], name="OHLC"))
         else:
-            fig.add_trace(go.Scatter(x=df['date'], y=df['close'], mode='lines', name='Price', line=dict(color='#00ffcc')))
-            if chart_type == "Candlestick":
-                st.info("यो कम्पनीको लागि OHLC डाटा उपलब्ध छैन, लाइन चार्ट देखाइँदैछ।")
-
-        fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10))
+            fig.add_trace(go.Scatter(y=df['close'], mode='lines', line=dict(color='#00ffcc', width=2), name="Price"))
+        
+        fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=500, margin=dict(l=0,r=0,t=0,b=0))
         st.plotly_chart(fig, use_container_width=True)
 
-    with col2:
-        st.subheader("AI Prediction")
-        if st.button("🚀 Predict Tomorrow"):
-            ctx = get_script_run_ctx()
-            with st.spinner('Analysing Market...'):
-                model = load_hf_model()
-                if model and len(df) >= 5:
-                    data_raw = df['close'].values.reshape(-1, 1)
-                    scaler = MinMaxScaler(feature_range=(0, 1))
-                    scaled_data = scaler.fit_transform(data_raw)
-                    last_5_days = scaled_data[-5:].reshape(1, 5, 1)
-                    prediction_scaled = model.predict(last_5_days)
-                    predicted_price = scaler.inverse_transform(prediction_scaled)[0][0]
-                    diff = predicted_price - last_price
-                    st.divider()
-                    st.metric(label="Forecasted Price", value=f"{predicted_price:.2f}", delta=f"{diff:.2f}")
-                else:
-                    st.error("Insufficent history (Min 5 days).")
+    with c_right:
+        st.subheader("🤖 AI Forecast")
+        if st.button("Predict Tomorrow"):
+            model = load_ai_model()
+            if model and len(df) >= 5:
+                scaler = MinMaxScaler()
+                scaled = scaler.fit_transform(df['close'].values.reshape(-1, 1))
+                pred = model.predict(scaled[-5:].reshape(1, 5, 1))
+                res = scaler.inverse_transform(pred)[0][0]
+                st.metric("Forecasted Price", f"Rs. {res:.2f}", f"{res - last['close']:.2f}")
+                if res > last['close']: st.success("Bullish Trend")
+                else: st.error("Bearish Trend")
+            else:
+                st.warning("Data insufficient.")
 
-    with st.expander("Historical Data Log"):
-        st.dataframe(df.sort_values(by='date', ascending=False), use_container_width=True)
-
+    with st.expander("Transaction Logs"):
+        st.dataframe(df.sort_values(by=df.columns[0], ascending=False), use_container_width=True)
 else:
-    st.error("No data found in database.")
-
-st.sidebar.markdown("---")
-st.sidebar.write("Advanced Share Market Analytics")
+    st.error("Data synchronization failed.")
