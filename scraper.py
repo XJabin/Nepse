@@ -17,22 +17,22 @@ def scrape_nepse_automation():
         page = context.new_page()
 
         try:
-            # १. पेज लोड गर्ने र नेटवर्क शान्त नभएसम्म पर्खिने
+            print("🚀 Navigating to NEPSE...")
             page.goto(url, wait_until="load", timeout=90000)
             
-            # २. 'items per page' को ड्रपडाउन आउन अलि बढी समय दिने
-            # नेप्सेको नयाँ साइटमा यो प्राय: .custom-select वा select भित्र हुन्छ
+            # ५०० को फिल्टर सेट गर्ने नयाँ लजिक
+            print("🔍 Setting filter to 500...")
             try:
+                # पहिले select ट्याग नआउन्जेल २० सेकेन्ड कुर्ने
                 page.wait_for_selector('select', timeout=20000)
+                # ५०० विकल्प छान्ने
                 page.select_option('select', "500")
-                print("✅ Set filter to 500 items.")
-            except:
-                print("⚠️ Dropdown not found, attempting to scrape default 20 rows.")
+                time.sleep(5) # डाटा रिफ्रेस हुन समय दिने
+            except Exception as e:
+                print(f"⚠️ Filter dropdown failed: {e}. Scraping default view.")
 
-            # ३. डाटा लोड हुन केही बेर कुर्ने
-            time.sleep(5) 
+            # टेबलको डाटा तान्ने
             page.wait_for_selector('table tbody tr', timeout=20000)
-
             table_data = page.evaluate("""
                 () => {
                     const rows = Array.from(document.querySelectorAll('table tbody tr'));
@@ -44,6 +44,7 @@ def scrape_nepse_automation():
             """)
 
             if table_data:
+                print(f"✅ Extracted {len(table_data)} rows.")
                 conn = sqlite3.connect(db_path)
                 conn.execute('''
                     CREATE TABLE IF NOT EXISTS daily_stock (
@@ -55,7 +56,6 @@ def scrape_nepse_automation():
                 count = 0
                 for row in table_data:
                     try:
-                        # Index checking: Symbol=1, Open=3, High=4, Low=5, Close=6, Vol=9, Date=10
                         symbol = row[1]
                         open_p = float(row[3].replace(',', ''))
                         high_p = float(row[4].replace(',', ''))
@@ -74,9 +74,9 @@ def scrape_nepse_automation():
                 
                 conn.commit()
                 conn.close()
-                print(f"🎉 Success: {count} rows updated.")
+                print(f"🎉 Success: {count} records in database.")
         except Exception as e:
-            print(f"💀 Error: {e}")
+            print(f"💀 Critical Error: {e}")
         finally:
             browser.close()
 
