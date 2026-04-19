@@ -5,3 +5,6 @@ scikit-learn
 tensorflow-cpu
 huggingface_hub
 plotly
+playwright
+openpyxl
+lxml
