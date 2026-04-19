@@ -31,15 +31,15 @@ async def scrape_nepse_data():
                         const cols = row.querySelectorAll('td');
                         if (cols.length >= 10) {
                             results.push({
-                                // 'SCRAPED_DATA' को सट्टा वास्तविक सिम्बोल (NTC, NABIL, etc.) लिने
-                                symbol: cols[1] ? cols[1].innerText.trim() : 'UNKNOWN',
+
+                                symbol: cols[1] ? cols[1].innerText.trim() : 'UNKNOWN', 
                                 date: today,
-                                open: cols[3] ? cols[3].innerText.replace(/,/g, '') : '0',
-                                high: cols[4] ? cols[4].innerText.replace(/,/g, '') : '0',
-                                low: cols[5] ? cols[5].innerText.replace(/,/g, '') : '0',
-                                close: cols[6] ? cols[6].innerText.replace(/,/g, '') : '0',
-                                vol: cols[9] ? cols[9].innerText.replace(/,/g, '') : '0'
-                            });
+                                open: cols[3] ? cols[3].innerText.replace(/,/g, '').trim() : '0',
+                                high: cols[4] ? cols[4].innerText.replace(/,/g, '').trim() : '0',
+                                low: cols[5] ? cols[5].innerText.replace(/,/g, '').trim() : '0',
+                                close: cols[6] ? cols[6].innerText.replace(/,/g, '').trim() : '0',
+                                vol: cols[9] ? cols[9].innerText.replace(/,/g, '').trim() : '0'
+                            }); 
                         }
                     });
                     return results;

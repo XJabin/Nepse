@@ -43,16 +43,23 @@ jobs:
         run: |
           python -c "
           from huggingface_hub import HfApi
+          import os
           api = HfApi()
-          try:
-              api.upload_file(
-                  path_or_fileobj='nepse_data.db',
-                  path_in_repo='nepse_data.db',
-                  repo_id='XJabin/nepse-lstm-model',
-                  repo_type='model',
-                  token='${{ secrets.HF_TOKEN }}'
-              )
-              print('✅ Successfully uploaded to Hugging Face!')
-          except Exception as e:
-              print(f'❌ HF Upload Failed: {e}')
+          file_path = 'nepse_data.db'
+          if os.path.exists(file_path):
+              try:
+                  api.upload_file(
+                      path_or_fileobj=file_path,
+                      path_in_repo='nepse_data.db',
+                      repo_id='XJabin/NEPSE-Predictor', # तिम्रो स्पेसको नाम यहाँ राख
+                      repo_type='space', # यदि Space मा हाल्ने हो भने 'space' राख, मोडलमा हो भने 'model'
+                      token=os.environ['HF_TOKEN']
+                  )
+                  print('✅ Successfully uploaded to Hugging Face!')
+              except Exception as e:
+                  print(f'❌ HF Upload Failed: {e}')
+                  exit(1)
+          else:
+              print('❌ Database file not found!')
+              exit(1)
           "
