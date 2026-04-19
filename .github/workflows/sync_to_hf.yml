@@ -9,25 +9,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          fetch-depth: 0
-          lfs: true 
+          python-version: '3.9'
 
-      - name: Install Git LFS
-        run: |
-          git lfs install
+      - name: Install HF Hub
+        run: pip install huggingface_hub
 
-      - name: Push to HF
+      - name: Upload to HF Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Hugging Face मा पुश गर्नको लागि जरुरी सेटिङ
-          git config --global user.email "action@github.com"
-          git config --global user.name "GitHub Action"
-          
-          # .db फाइललाई LFS मा ट्र्याक गर्ने ताकि HF ले रिजेक्ट नगरोस्
-          git lfs track "*.db"
-          git add .gitattributes
-          
-          # Force push to Hugging Face
-          git push --force https://XJabin:$HF_TOKEN@huggingface.co/spaces/XJabin/NEPSE-Predictor main
+          python -c "
+          from huggingface_hub import HfApi
+          import os
+          api = HfApi()
+          repo_id = 'XJabin/NEPSE-Predictor' 
+          try:
+              api.upload_file(
+                  path_or_fileobj='nepse_data.db',
+                  path_in_repo='nepse_data.db',
+                  repo_id=repo_id,
+                  repo_type='space',
+                  token=os.environ['HF_TOKEN']
+              )
+              print('✅ Database successfully uploaded to HF Space!')
+          except Exception as e:
+              print(f'❌ Failed: {e}')
+              exit(1)
+          "
